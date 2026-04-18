@@ -8,14 +8,27 @@ interface Stats {
   activeAlerts: number
   personsDetected: number
   bagsDetected: number
+  dangerousDetected: number
 }
 
 interface RecentDetection {
   id: string
-  imageUrl: string
   timestamp: string
   detections: number
   hasAlert: boolean
+}
+
+interface AlertSummary {
+  id: string
+  timestamp: string
+  type: string
+  severity: string
+}
+
+interface SystemStatus {
+  aiModel: string
+  cameraFeeds: string
+  uptime: string
 }
 
 export default function Dashboard() {
@@ -23,9 +36,16 @@ export default function Dashboard() {
     totalDetections: 0,
     activeAlerts: 0,
     personsDetected: 0,
-    bagsDetected: 0
+    bagsDetected: 0,
+    dangerousDetected: 0
   })
   const [recentDetections, setRecentDetections] = useState<RecentDetection[]>([])
+  const [recentAlerts, setRecentAlerts] = useState<AlertSummary[]>([])
+  const [systemStatus, setSystemStatus] = useState<SystemStatus>({
+    aiModel: 'Loading...',
+    cameraFeeds: 'Loading...',
+    uptime: 'Loading...'
+  })
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -37,6 +57,12 @@ export default function Dashboard() {
       const response = await axios.get('/api/dashboard')
       setStats(response.data.stats)
       setRecentDetections(response.data.recentDetections)
+      setRecentAlerts(response.data.recentAlerts || [])
+      setSystemStatus(response.data.systemStatus || {
+        aiModel: 'Active',
+        cameraFeeds: '4 Online',
+        uptime: '99.8%'
+      })
     } catch (error) {
       setStats({
         totalDetections: 156,
@@ -45,13 +71,18 @@ export default function Dashboard() {
         bagsDetected: 42
       })
       setRecentDetections([
-        { id: '1', imageUrl: '', timestamp: '2024-02-15 10:30:00', detections: 3, hasAlert: true },
-        { id: '2', imageUrl: '', timestamp: '2024-02-15 10:25:00', detections: 2, hasAlert: false },
-        { id: '3', imageUrl: '', timestamp: '2024-02-15 10:20:00', detections: 1, hasAlert: false },
-        { id: '4', imageUrl: '', timestamp: '2024-02-15 10:15:00', detections: 4, hasAlert: true },
-        { id: '5', imageUrl: '', timestamp: '2024-02-15 10:10:00', detections: 2, hasAlert: false },
-        { id: '6', imageUrl: '', timestamp: '2024-02-15 10:05:00', detections: 1, hasAlert: false },
+        { id: '1', timestamp: '2024-02-15 10:30:00', detections: 3, hasAlert: true },
+        { id: '2', timestamp: '2024-02-15 10:25:00', detections: 2, hasAlert: false },
+        { id: '3', timestamp: '2024-02-15 10:20:00', detections: 1, hasAlert: false },
+        { id: '4', timestamp: '2024-02-15 10:15:00', detections: 4, hasAlert: true },
+        { id: '5', timestamp: '2024-02-15 10:10:00', detections: 2, hasAlert: false },
+        { id: '6', timestamp: '2024-02-15 10:05:00', detections: 1, hasAlert: false },
       ])
+      setRecentAlerts([
+        { id: '1', timestamp: '2 min ago', type: 'Unattended Bag', severity: 'high' },
+        { id: '2', timestamp: '15 min ago', type: 'Crowd Gathering', severity: 'medium' }
+      ])
+      setSystemStatus({ aiModel: 'Active', cameraFeeds: '4 Online', uptime: '99.8%' })
     } finally {
       setLoading(false)
     }
@@ -62,6 +93,7 @@ export default function Dashboard() {
     { label: 'Active Alerts', value: stats.activeAlerts, icon: AlertTriangle, color: 'from-red-500 to-orange-500' },
     { label: 'Persons Detected', value: stats.personsDetected, icon: Shield, color: 'from-green-500 to-emerald-500' },
     { label: 'Bags Detected', value: stats.bagsDetected, icon: Camera, color: 'from-purple-500 to-pink-500' },
+    { label: 'Dangerous Items', value: stats.dangerousDetected, icon: AlertTriangle, color: 'from-red-600 to-red-800' },
   ]
 
   return (
@@ -71,7 +103,7 @@ export default function Dashboard() {
         <p className="text-[#9E9E9E]">Real-time AI-powered threat detection overview</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         {statCards.map((stat, index) => (
           <div
             key={index}
@@ -135,19 +167,19 @@ export default function Dashboard() {
               Recent Alerts
             </h2>
             <div className="space-y-3">
-              {[
-                { time: '2 min ago', type: 'Unattended Bag', severity: 'high' },
-                { time: '15 min ago', type: 'Crowd Gathering', severity: 'medium' },
-                { time: '32 min ago', type: 'Suspicious Object', severity: 'high' },
-              ].map((alert, i) => (
-                <div key={i} className="flex items-center gap-3 p-3 bg-[#121212] rounded-lg">
-                  <div className={`w-2 h-2 rounded-full ${alert.severity === 'high' ? 'bg-red-500' : 'bg-yellow-500'}`} />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">{alert.type}</p>
-                    <p className="text-xs text-[#9E9E9E]">{alert.time}</p>
+              {recentAlerts.length > 0 ? (
+                recentAlerts.map((alert) => (
+                  <div key={alert.id} className="flex items-center gap-3 p-3 bg-[#121212] rounded-lg">
+                    <div className={`w-2 h-2 rounded-full ${alert.severity === 'high' ? 'bg-red-500' : 'bg-yellow-500'}`} />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">{alert.type}</p>
+                      <p className="text-xs text-[#9E9E9E]">{alert.timestamp}</p>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))
+              ) : (
+                <div className="p-4 rounded-lg bg-[#121212] text-sm text-[#9E9E9E]">No alerts in the last hour</div>
+              )}
             </div>
           </div>
 
@@ -156,15 +188,15 @@ export default function Dashboard() {
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-sm text-[#9E9E9E]">AI Model</span>
-                <span className="px-2 py-1 bg-green-600/20 text-green-500 text-xs rounded-full">Active</span>
+                <span className="text-sm font-medium">{systemStatus.aiModel}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-[#9E9E9E]">Camera Feeds</span>
-                <span className="px-2 py-1 bg-green-600/20 text-green-500 text-xs rounded-full">4 Online</span>
+                <span className="text-sm font-medium">{systemStatus.cameraFeeds}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-[#9E9E9E]">Detection Rate</span>
-                <span className="text-sm font-medium">99.2%</span>
+                <span className="text-sm font-medium">{systemStatus.uptime}</span>
               </div>
             </div>
           </div>

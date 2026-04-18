@@ -6,6 +6,7 @@ router = APIRouter()
 
 class DetectionRequest(BaseModel):
     image: str
+    confidence: float = 0.25
 
 class DashboardResponse(BaseModel):
     stats: dict
@@ -13,7 +14,7 @@ class DashboardResponse(BaseModel):
 
 @router.post("/detect")
 async def detect_objects(request: DetectionRequest):
-    result = detection_engine.process_image(request.image)
+    result = detection_engine.process_image(request.image, request.confidence)
     return result
 
 @router.get("/health")

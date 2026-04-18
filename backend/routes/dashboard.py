@@ -20,6 +20,7 @@ class StatsResponse(BaseModel):
     activeAlerts: int
     personsDetected: int
     bagsDetected: int
+    dangerousDetected: int
     detectionRate: float
 
 class DetectionRecord(BaseModel):
@@ -30,7 +31,7 @@ class DetectionRecord(BaseModel):
     detections: List[dict]
     hasAlert: bool
     alertType: Optional[str]
-    stats: dict
+    stats: Optional[dict] = None
 
 db_logs: List[LogEntry] = []
 db_detections: List[DetectionRecord] = []
@@ -39,6 +40,7 @@ stats = StatsResponse(
     activeAlerts=0,
     personsDetected=0,
     bagsDetected=42,
+    dangerousDetected=0,
     detectionRate=99.2
 )
 
@@ -47,6 +49,7 @@ def update_stats():
     stats.activeAlerts = sum(1 for d in db_detections if d.hasAlert)
     stats.personsDetected = sum(1 for det in db_detections for obj in det.detections if obj.get('class') == 'person')
     stats.bagsDetected = sum(1 for det in db_detections for obj in det.detections if obj.get('class') in ['backpack', 'handbag', 'bag', 'suitcase'])
+    stats.dangerousDetected = sum(1 for det in db_detections for obj in det.detections if obj.get('class') in ['knife', 'scissors', 'bottle', 'cell phone'])
 
 @router.get("/dashboard")
 async def get_dashboard():
