@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Upload, Camera, Image, AlertTriangle, CheckCircle, Loader2, X } from 'lucide-react'
+import { Upload, Camera, Image, Video, AlertTriangle, CheckCircle, Loader2, X } from 'lucide-react'
 import axios from 'axios'
-import type { Detection, DetectionResult } from '../types'
+import type { Detection, DetectionResult, VideoDetectionResult } from '../types'
 
 export default function Detection() {
-  const [mode, setMode] = useState<'image' | 'camera'>('image')
+  const [mode, setMode] = useState<'image' | 'camera' | 'video'>('image')
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const [processedImage, setProcessedImage] = useState<string | null>(null)
   const [detections, setDetections] = useState<Detection[]>([])
@@ -25,6 +25,9 @@ export default function Detection() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const frameIntervalRef = useRef<number | null>(null)
+  const videoInputRef = useRef<HTMLInputElement>(null)
+  const [selectedVideo, setSelectedVideo] = useState<File | null>(null)
+  const [videoResult, setVideoResult] = useState<VideoDetectionResult | null>(null)
 
   const stopCamera = useCallback(() => {
     if (frameIntervalRef.current) {
@@ -106,7 +109,7 @@ export default function Detection() {
   useEffect(() => {
     if (mode === 'camera' && !cameraActive) {
       startCamera()
-    } else if (mode === 'image' && cameraActive) {
+    } else if (mode !== 'camera' && cameraActive) {
       stopCamera()
     }
   }, [mode, cameraActive, startCamera, stopCamera])
@@ -172,7 +175,11 @@ export default function Detection() {
         timestamp: new Date().toISOString(),
         hasAlert: response.data.hasAlert,
         alertType: response.data.alertType,
-        alertSeverity: response.data.alertSeverity
+        alertSeverity: response.data.alertSeverity,
+        unattendedBags: response.data.unattendedBags || 0,
+        hasPanic: response.data.hasPanic || false,
+        density: response.data.density || 0,
+        stats: response.data.stats || { total: 0, persons: 0, bags: 0, dangerous: 0, unattendedBags: 0 }
       }
       setDetectionResults(prev => [result, ...prev])
     } catch (err) {
@@ -187,6 +194,60 @@ export default function Detection() {
       setHasAlert(true)
       setAlertType('High Risk: knife detected')
       setAlertSeverity('critical')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const clearResults = () => {
+    setSelectedImage(null)
+    setProcessedImage(null)
+    setDetections([])
+    setError(null)
+    setHasAlert(false)
+    setAlertType(null)
+    setAlertSeverity(null)
+    setSelectedVideo(null)
+    setVideoResult(null)
+  }
+
+  const handleVideoSelect = (file: File) => {
+    if (file && file.type.startsWith('video/')) {
+      setSelectedVideo(file)
+      setVideoResult(null)
+      setDetections([])
+      setError(null)
+      setHasAlert(false)
+      setAlertType(null)
+      setAlertSeverity(null)
+    }
+  }
+
+  const processVideo = async () => {
+    if (!selectedVideo) return
+
+    setLoading(true)
+    setError(null)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', selectedVideo)
+      formData.append('confidence', confidenceThreshold.toString())
+      formData.append('frame_skip', '30')
+
+      const response = await axios.post('/api/detect/video', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 300000
+      })
+
+      setVideoResult(response.data)
+      setDetections(response.data.detections || [])
+      setHasAlert(response.data.hasAlert)
+      setAlertType(response.data.alertType || null)
+      setAlertSeverity(response.data.alertSeverity || null)
+    } catch (err) {
+      setError('Video processing failed')
+      console.error(err)
     } finally {
       setLoading(false)
     }
@@ -248,6 +309,15 @@ export default function Detection() {
                 <Camera className="w-4 h-4 inline mr-2" />
                 Live Camera
               </button>
+              <button
+                onClick={() => { setMode('video'); stopCamera(); }}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  mode === 'video' ? 'bg-blue-600 text-white' : 'text-[#9E9E9E] hover:text-white'
+                }`}
+              >
+                <Video className="w-4 h-4 inline mr-2" />
+                Video
+              </button>
             </div>
             <div className="bg-[#131313] rounded-xl border border-[#2A2A2A] p-4">
               <div className="flex items-center justify-between gap-4">
@@ -283,8 +353,8 @@ export default function Detection() {
           <div className="bg-[#1A1A1A] rounded-xl border border-[#2A2A2A] overflow-hidden">
             <div className="p-4 border-b border-[#2A2A2A] flex items-center justify-between">
               <h2 className="font-semibold flex items-center gap-2">
-                {mode === 'camera' ? <Camera className="w-5 h-5" /> : <Image className="w-5 h-5" />}
-                {mode === 'camera' ? 'Live Camera Feed' : 'Image Input'}
+                {mode === 'camera' ? <Camera className="w-5 h-5" /> : mode === 'video' ? <Video className="w-5 h-5" /> : <Image className="w-5 h-5" />}
+                {mode === 'camera' ? 'Live Camera Feed' : mode === 'video' ? 'Video Input' : 'Image Input'}
               </h2>
               {selectedImage && (
                 <button
@@ -342,6 +412,107 @@ export default function Detection() {
                     Processing live video frames...
                   </p>
                 </div>
+              ) : mode === 'video' ? (
+                !selectedVideo ? (
+                  <div
+                    onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+                    onDragLeave={() => setDragging(false)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setDragging(false);
+                      const file = e.dataTransfer.files[0];
+                      if (file) handleVideoSelect(file);
+                    }}
+                    className={`border-2 border-dashed rounded-xl p-12 text-center transition-all cursor-pointer ${
+                      dragging
+                        ? 'border-blue-500 bg-blue-500/10'
+                        : 'border-[#3A3A3A] hover:border-[#5A5A5A]'
+                    }`}
+                    onClick={() => videoInputRef.current?.click()}
+                  >
+                    <input
+                      ref={videoInputRef}
+                      type="file"
+                      accept="video/*"
+                      className="hidden"
+                      onChange={(e) => e.target.files?.[0] && handleVideoSelect(e.target.files[0])}
+                    />
+                    <div className="w-16 h-16 mx-auto mb-4 bg-[#272727] rounded-full flex items-center justify-center">
+                      <Video className="w-8 h-8 text-[#9E9E9E]" />
+                    </div>
+                    <h3 className="text-lg font-medium mb-2">Drop your video here or click to upload</h3>
+                    <p className="text-sm text-[#9E9E9E] mb-4">Supports MP4, AVI, MOV, MKV</p>
+                    <button className="flex items-center gap-2 px-4 py-2 bg-[#272727] hover:bg-[#303030] rounded-lg transition-colors mx-auto">
+                      <Upload className="w-4 h-4" />
+                      Upload Video
+                    </button>
+                  </div>
+                ) : videoResult ? (
+                  <div className="space-y-4">
+                    <div className="bg-[#121212] rounded-xl p-4">
+                      <h3 className="font-semibold mb-3 flex items-center gap-2">
+                        <Video className="w-5 h-5 text-blue-500" />
+                        Video Analysis Results
+                      </h3>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                        <div className="bg-[#1A1A1A] rounded-lg p-3 text-center">
+                          <p className="text-2xl font-bold text-blue-500">{videoResult.duration.toFixed(1)}s</p>
+                          <p className="text-xs text-[#9E9E9E]">Duration</p>
+                        </div>
+                        <div className="bg-[#1A1A1A] rounded-lg p-3 text-center">
+                          <p className="text-2xl font-bold text-blue-500">{videoResult.fps}</p>
+                          <p className="text-xs text-[#9E9E9E]">FPS</p>
+                        </div>
+                        <div className="bg-[#1A1A1A] rounded-lg p-3 text-center">
+                          <p className="text-2xl font-bold text-blue-500">{videoResult.totalFrames}</p>
+                          <p className="text-xs text-[#9E9E9E]">Total Frames</p>
+                        </div>
+                        <div className="bg-[#1A1A1A] rounded-lg p-3 text-center">
+                          <p className="text-2xl font-bold text-blue-500">{videoResult.framesProcessed}</p>
+                          <p className="text-xs text-[#9E9E9E]">Frames Analyzed</p>
+                        </div>
+                      </div>
+                      {videoResult.keyFrames.length > 0 && (
+                        <div>
+                          <p className="text-sm font-medium mb-2 text-[#9E9E9E]">Alert Frames ({videoResult.keyFrames.length})</p>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                            {videoResult.keyFrames.map((kf, idx) => (
+                              <div key={idx} className="rounded-lg overflow-hidden bg-[#1A1A1A] border border-[#2A2A2A]">
+                                <img src={kf.image} alt={`Frame ${kf.frame}`} className="w-full h-32 object-cover" />
+                                <div className="p-2">
+                                  <p className="text-xs text-[#9E9E9E]">t={kf.timestamp}s</p>
+                                  {kf.alertType && (
+                                    <p className={`text-xs mt-1 ${
+                                      kf.alertSeverity === 'critical' ? 'text-red-500' :
+                                      kf.alertSeverity === 'warning' ? 'text-orange-500' : 'text-yellow-500'
+                                    }`}>
+                                      {kf.alertType}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <div className="rounded-xl overflow-hidden bg-[#121212] flex items-center justify-center h-64">
+                      <div className="text-center">
+                        <Video className="w-12 h-12 text-[#3A3A3A] mx-auto mb-3" />
+                        <p className="text-[#9E9E9E] text-sm">{selectedVideo.name}</p>
+                        <p className="text-xs text-[#7C7C7C] mt-1">{(selectedVideo.size / 1024 / 1024).toFixed(1)} MB</p>
+                      </div>
+                    </div>
+                    {loading && (
+                      <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                        <Loader2 className="w-12 h-12 animate-spin text-blue-500" />
+                      </div>
+                    )}
+                  </div>
+                )
               ) : !selectedImage ? (
                 <div
                   onDrop={handleDrop}
@@ -397,7 +568,7 @@ export default function Detection() {
                 </div>
               )}
 
-              {selectedImage && !loading && (
+              {mode === 'image' && selectedImage && !loading && (
                 <div className="mt-4 flex justify-center">
                   <button
                     onClick={processImage}
@@ -405,6 +576,17 @@ export default function Detection() {
                   >
                     <CheckCircle className="w-5 h-5" />
                     Run Detection
+                  </button>
+                </div>
+              )}
+              {mode === 'video' && selectedVideo && !videoResult && !loading && (
+                <div className="mt-4 flex justify-center">
+                  <button
+                    onClick={processVideo}
+                    className="px-8 py-3 bg-blue-600 hover:bg-blue-700 rounded-xl font-medium flex items-center gap-2 transition-colors"
+                  >
+                    <Video className="w-5 h-5" />
+                    Process Video
                   </button>
                 </div>
               )}

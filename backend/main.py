@@ -44,6 +44,7 @@ async def health():
         "endpoints": {
             "dashboard": "/api/dashboard",
             "detect": "/api/detect",
+            "detect_video": "/api/detect/video",
             "logs": "/api/logs",
             "alerts": "/api/alerts",
             "person": "/api/person",
@@ -54,4 +55,4 @@ async def health():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000, limit_max_request_body=100_000_000)
